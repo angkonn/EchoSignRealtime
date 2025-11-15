@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Hand Model Test</title>
+    <style>
+        body { margin: 0; background: #1a1a2e; color: white; font-family: monospace; }
+        canvas { width: 100%; height: 70vh; display: block; }
+        #info { padding: 20px; }
+        button { padding: 10px 20px; margin: 5px; background: #16213e; color: white; border: 1px solid #0f3460; cursor: pointer; }
+        button:hover { background: #0f3460; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="info">
+        <h2>Hand Model Debugger</h2>
+        <button onclick="testThumb()">Test Thumb Bend</button>
+        <button onclick="testIndex()">Test Index Bend</button>
+        <button onclick="testAll()">Test All Fingers</button>
+        <button onclick="resetHand()">Reset</button>
+        <pre id="log"></pre>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        const canvas = document.getElementById('canvas');
+        const log = document.getElementById('log');
+        
+        let scene, camera, renderer, controls;
+        let handModel, handSkeleton;
+        let fingerBones = { thumb: [], index: [], middle: [], ring: [], pinky: [] };
+
+        function logMsg(msg) {
+            console.log(msg);
+            log.textContent += msg + '\n';
+        }
+
+        // Setup scene
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a2e);
+
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / (window.innerHeight * 0.7), 0.1, 100);
+        camera.position.set(0, 0, 5);
+
+        renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight * 0.7);
+        renderer.setPixelRatio(window.devicePixelRatio);
+
+        controls = new OrbitControls(camera, canvas);
+        controls.enableDamping = true;
+
+        // Lights
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(-5, 5, 5);
+        scene.add(dirLight);
+
+        // Load model
+        const loader = new GLTFLoader();
+        loader.load('hand.glb', (gltf) => {
+            handModel = gltf.scene;
+            handModel.scale.set(-1, 1, 1);
+            
+            handModel.traverse((child) => {
+                if (child.isMesh) {
+                    child.material.side = THREE.DoubleSide;
+                    logMsg(`Mesh found: ${child.name}`);
+                }
+            });
+            
+            scene.add(handModel);
+            
+            // Setup bones
+            const handMesh = scene.getObjectByName('Hand');
+            if (handMesh && handMesh.skeleton) {
+                handSkeleton = handMesh.skeleton;
+                const bones = handSkeleton.bones;
+                
+                logMsg(`\nTotal bones: ${bones.length}`);
+                bones.forEach((bone, i) => {
+                    logMsg(`Bone ${i}: ${bone.name || 'unnamed'}`);
+                });
+                
+                // Orient hand
+                handModel.parent.rotation.x = Math.PI / 2;
+                handModel.parent.rotation.z = Math.PI;
+                
+                // Map bones
+                fingerBones.thumb = [bones[3], bones[4], bones[5]];
+                fingerBones.index = [bones[7], bones[8], bones[9]];
+                fingerBones.middle = [bones[11], bones[12], bones[13]];
+                fingerBones.ring = [bones[15], bones[16], bones[17]];
+                fingerBones.pinky = [bones[19], bones[20], bones[21]];
+                
+                logMsg('\nBone mapping complete!');
+            } else {
+                logMsg('ERROR: Hand skeleton not found!');
+            }
+        }, undefined, (error) => {
+            logMsg('ERROR loading model: ' + error);
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Test functions
+        window.testThumb = () => {
+            logMsg('\n>>> Testing thumb bend');
+            fingerBones.thumb.forEach((bone, i) => {
+                if (bone) {
+                    gsap.to(bone.rotation, { duration: 1, x: 1.2 });
+                    logMsg(`Bending thumb bone ${i}`);
+                }
+            });
+        };
+
+        window.testIndex = () => {
+            logMsg('\n>>> Testing index bend');
+            fingerBones.index.forEach((bone, i) => {
+                if (bone) {
+                    gsap.to(bone.rotation, { duration: 1, x: 1.2 });
+                    logMsg(`Bending index bone ${i}`);
+                }
+            });
+        };
+
+        window.testAll = () => {
+            logMsg('\n>>> Testing all fingers');
+            Object.keys(fingerBones).forEach(finger => {
+                fingerBones[finger].forEach((bone, i) => {
+                    if (bone) {
+                        gsap.to(bone.rotation, { duration: 1, x: 1.2 });
+                    }
+                });
+            });
+        };
+
+        window.resetHand = () => {
+            logMsg('\n>>> Resetting hand');
+            Object.keys(fingerBones).forEach(finger => {
+                fingerBones[finger].forEach((bone, i) => {
+                    if (bone) {
+                        gsap.to(bone.rotation, { duration: 1, x: 0, z: 0 });
+                    }
+                });
+            });
+        };
+    </script>
+</body>
+</html>

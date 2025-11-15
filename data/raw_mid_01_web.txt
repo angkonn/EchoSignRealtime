@@ -1,3 +1,0 @@
-# label=mid
-# timestamp=1763140692.4987144
-# format: FLEX: f1 f2 f3 f4 f5 | ACC: ax ay az | GYRO: gx gy gz | GDP=val

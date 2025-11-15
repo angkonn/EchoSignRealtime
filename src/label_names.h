@@ -1,13 +1,19 @@
 #pragma once
 
-#define NUM_CLASSES 7
+#define NUM_CLASSES 13
 
 static const char* const label_names[NUM_CLASSES] = {
-  "Five",
-  "Four",
-  "One",
-  "One 01 web",
-  "Rest",
-  "Three",
-  "Two"
+  "A",
+  "B",
+  "C",
+  "D",
+  "E",
+  "F",
+  "G",
+  "H",
+  "I",
+  "K",
+  "L",
+  "M",
+  "Rest"
 };

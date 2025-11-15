@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EchoSign - Gesture Recognition</title>
     <link rel="stylesheet" href="style.css">
+    <!-- GSAP for smooth animations -->
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js"></script>
+    <!-- Three.js module imports -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/"
+        }
+    }
+    </script>
 </head>
 <body>
     <div class="container">
@@ -23,7 +34,30 @@
         </header>
 
         <main class="main-content">
-            <section class="gesture-display">
+            <!-- Two column layout: 3D Model + Predictions -->
+            <div class="two-column-layout">
+                <!-- Left Column: 3D Hand Model -->
+                <section class="hand-3d-container">
+                    <div class="hand-3d-header">
+                        <h2 class="section-title">3D Hand Model</h2>
+                        <div class="hand-3d-controls">
+                            <button id="resetCamera" class="control-btn" title="Reset Camera">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                                    <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="hand3d" class="hand-3d-canvas"></div>
+                    <div class="hand-3d-info">
+                        <span>Click and drag to rotate • Scroll to zoom</span>
+                    </div>
+                </section>
+
+                <!-- Right Column: Predictions & Metrics -->
+                <div class="prediction-column">
+                    <section class="gesture-display">
                 <div class="gesture-card">
                     <div class="gesture-label">Current Gesture</div>
                     <div class="gesture-name" id="gestureName">—</div>
@@ -55,7 +89,7 @@
                 </div>
             </section>
 
-            <section class="sensor-panel">
+                    <section class="sensor-panel">
                 <h2 class="section-title">Flex Sensors</h2>
                 <div class="sensors-grid">
                     <div class="sensor-item">
@@ -136,12 +170,14 @@
                 </div>
             </section>
 
-            <section class="history-panel">
-                <h2 class="section-title">Recent Gestures</h2>
-                <div class="history-list" id="historyList">
-                    <div class="history-empty">Waiting for gestures...</div>
+                    <section class="history-panel">
+                        <h2 class="section-title">Recent Gestures</h2>
+                        <div class="history-list" id="historyList">
+                            <div class="history-empty">Waiting for gestures...</div>
+                        </div>
+                    </section>
                 </div>
-            </section>
+            </div>
         </main>
 
         <footer class="footer">
@@ -151,6 +187,6 @@
         </footer>
     </div>
 
-    <script src="main.js"></script>
+    <script type="module" src="main.js"></script>
 </body>
 </html>

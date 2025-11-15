@@ -111,6 +111,11 @@ def main_js():
     """Serve JavaScript file"""
     return send_from_directory(DATA_DIR, "main.js")
 
+@app.route("/hand.glb")
+def hand_model():
+    """Serve 3D hand model"""
+    return send_from_directory(DATA_DIR, "hand.glb")
+
 @app.route("/data")
 def api_data():
     """REST endpoint for real-time data (fallback for WebSocket)"""

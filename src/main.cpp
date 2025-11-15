@@ -2,13 +2,32 @@
 #include "Calib.h"
 #include "predictor.h"
 
+// Check if sentence model files exist
+#if __has_include("sentence_knn_model.h")
+  #define SENTENCE_MODE_AVAILABLE 1
+  #include "sentence_predictor.h"
+  #include "sentence_label_names.h"
+#else
+  #define SENTENCE_MODE_AVAILABLE 0
+#endif
+
 // -------------------- CONFIG --------------------
 
 // 0 = DATA COLLECTION (raw log for Python tools)
 // 1 = REAL-TIME PREDICTION (uses KNN model)
 #define RUN_MODE 1
 
+// Prediction modes (only used when RUN_MODE == 1)
+// 0 = GESTURE MODE (instant gestures)
+// 1 = SENTENCE MODE (3-second windows)
+// 2 = AUTO MODE (gesture by default, sentence when button pressed)
+#define PREDICTION_MODE 2
+
 GlovePredictor predictor;
+
+#if SENTENCE_MODE_AVAILABLE && RUN_MODE == 1
+SentencePredictor sentencePredictor;
+#endif
 
 // Simple timer for collection loop
 uint32_t lastPrintMs = 0;
@@ -16,6 +35,12 @@ const uint32_t COLLECT_PERIOD_MS = 50;   // ~20 Hz
 
 // Recording state (from PC via serial command)
 bool gRecordingActive = false;
+
+// Sentence mode state
+bool sentenceModeActive = false;
+bool lastButtonState = HIGH;
+uint32_t lastDebounceTime = 0;
+const uint32_t DEBOUNCE_DELAY_MS = 50;
 
 // --------------- LED / BUZZER HELPERS ---------------
 
@@ -36,6 +61,16 @@ static void signalRecordingStart() {
 static void signalRecordingStop() {
   digitalWrite(PIN_LED, LOW);
   beep(60, 1, 0);   // single short beep
+}
+
+static void signalSentenceStart() {
+  digitalWrite(PIN_LED, HIGH);
+  beep(100, 3, 50);  // triple beep for sentence mode
+}
+
+static void signalSentenceComplete() {
+  digitalWrite(PIN_LED, LOW);
+  beep(150, 1, 0);   // longer beep when complete
 }
 
 static void handleSerialCommands() {
@@ -65,6 +100,9 @@ void setup() {
   digitalWrite(PIN_LED, LOW);
   digitalWrite(PIN_BUZZER, LOW);
 
+  // Sentence button (with internal pullup)
+  pinMode(PIN_SENTENCE_BUTTON, INPUT_PULLUP);
+
   if (!predictor.begin()) {
     Serial.println("MPU6050 init FAILED");
   } else {
@@ -73,6 +111,22 @@ void setup() {
     Serial.println("Mode: DATA COLLECTION");
 #else
     Serial.println("Mode: REAL-TIME PREDICTION");
+  #if PREDICTION_MODE == 0
+    Serial.println("Prediction: GESTURE MODE");
+  #elif PREDICTION_MODE == 1
+    #if SENTENCE_MODE_AVAILABLE
+      Serial.println("Prediction: SENTENCE MODE");
+    #else
+      Serial.println("ERROR: Sentence mode requested but model files missing!");
+      Serial.println("Run: python tools/train_sentence_knn.py");
+    #endif
+  #elif PREDICTION_MODE == 2
+    #if SENTENCE_MODE_AVAILABLE
+      Serial.println("Prediction: AUTO MODE (gesture + sentence button)");
+    #else
+      Serial.println("Prediction: GESTURE MODE (sentence model not available)");
+    #endif
+  #endif
 #endif
     // Power-on beep
     beep(60, 1, 0);
@@ -82,6 +136,31 @@ void setup() {
 void loop() {
   // Always process incoming serial commands
   handleSerialCommands();
+
+#if RUN_MODE == 1 && SENTENCE_MODE_AVAILABLE && (PREDICTION_MODE == 1 || PREDICTION_MODE == 2)
+  // Handle sentence button (with debouncing)
+  int buttonReading = digitalRead(PIN_SENTENCE_BUTTON);
+  
+  if (buttonReading != lastButtonState) {
+    lastDebounceTime = millis();
+  }
+  
+  if ((millis() - lastDebounceTime) > DEBOUNCE_DELAY_MS) {
+    // Button is stable
+    if (buttonReading == LOW && lastButtonState == HIGH) {
+      // Button pressed (LOW because pullup)
+      if (!sentencePredictor.recording()) {
+        // Start sentence recording
+        sentenceModeActive = true;
+        sentencePredictor.startRecording();
+        signalSentenceStart();
+        
+        Serial.println("{\"event\":\"sentence_start\"}");
+      }
+    }
+  }
+  lastButtonState = buttonReading;
+#endif
 
 #if RUN_MODE == 0
   // --------- DATA COLLECTION MODE ---------
@@ -157,8 +236,56 @@ void loop() {
   float fgxDeg = gx / 131.0f;
   float fgyDeg = gy / 131.0f;
   float fgzDeg = gz / 131.0f;
-  
-  // Get prediction
+
+#if SENTENCE_MODE_AVAILABLE && (PREDICTION_MODE == 1 || PREDICTION_MODE == 2)
+  // Check if sentence mode is active
+  if (sentenceModeActive && sentencePredictor.recording()) {
+    // Add sample to sentence buffer
+    bool windowComplete = sentencePredictor.addSample(
+      f1, f2, f3, f4, f5, gdp, fax, fay, faz, fgxDeg, fgyDeg, fgzDeg
+    );
+    
+    // Send progress update
+    float progress = sentencePredictor.getRecordingProgress();
+    Serial.print("{\"mode\":\"sentence\",\"recording\":true,\"progress\":");
+    Serial.print(progress, 2);
+    Serial.println("}");
+    
+    if (windowComplete) {
+      // Window complete, predict sentence
+      signalSentenceComplete();
+      
+      float meanDist = 0.0f;
+      uint8_t labelIdx = sentencePredictor.predict(&meanDist);
+      
+      const char* sentenceName = "unknown";
+      if (labelIdx < SENTENCE_NUM_CLASSES) {
+        sentenceName = sentence_label_names[labelIdx];
+      }
+      
+      // Calculate confidence (inverse of distance)
+      float confidence = 1.0f / (1.0f + meanDist);
+      
+      // Output sentence prediction
+      Serial.print("{\"mode\":\"sentence\",\"recording\":false,\"sentence\":\"");
+      Serial.print(sentenceName);
+      Serial.print("\",\"confidence\":");
+      Serial.print(confidence, 3);
+      Serial.print(",\"meanD\":");
+      Serial.print(meanDist, 2);
+      Serial.println("}");
+      
+      sentenceModeActive = false;
+      sentencePredictor.reset();
+    }
+    
+    delay(10);  // Small delay for sampling rate control
+    return;  // Skip gesture prediction while in sentence mode
+  }
+#endif
+
+#if PREDICTION_MODE == 0 || PREDICTION_MODE == 2 || !SENTENCE_MODE_AVAILABLE
+  // Regular gesture prediction
   float bestDist = 0.0f;
   uint8_t labelIdx = predictor.predictGesture(&bestDist, 250, 10);
   
@@ -169,6 +296,7 @@ void loop() {
 
   // Output JSON format for web UI
   Serial.print("{");
+  Serial.print("\"mode\":\"gesture\",");
   Serial.print("\"label\":\""); Serial.print(gestureName); Serial.print("\",");
   Serial.print("\"meanD\":" ); Serial.print(bestDist, 2); Serial.print(",");
   Serial.print("\"gdp\":" ); Serial.print(gdp, 1); Serial.print(",");
@@ -184,6 +312,7 @@ void loop() {
   Serial.print("\"gy\":" ); Serial.print(fgyDeg, 1); Serial.print(",");
   Serial.print("\"gz\":" ); Serial.print(fgzDeg, 1);
   Serial.println("}");
+#endif
 
   delay(100);
 #endif

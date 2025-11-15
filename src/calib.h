@@ -25,6 +25,10 @@ static const int PIN_I2C_SCL = 22;
 static const int PIN_LED    = 2;
 static const int PIN_BUZZER = 4;
 
+// Button pin for sentence recording trigger
+// Connect button between this pin and GND (internal pullup enabled)
+static const int PIN_SENTENCE_BUTTON = 5;
+
 // MPU-6050 I2C address
 #ifndef MPU6050_ADDR
 #define MPU6050_ADDR 0x68
