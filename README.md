@@ -91,6 +91,14 @@ python tools/parse_and_train.py
 
 Start the web interface:
 
+
+## Hardware
+
+Photos of the current glove build (flex sensors + ESP32):
+
+![EchoSign Glove Front](data/WhatsApp%20Image%202025-11-29%20at%203.47.41%20PM.jpeg)
+
+![EchoSign Glove + UI](data/WhatsApp%20Image%202025-11-29%20at%203.47.42%20PM.jpeg)
 ```powershell
 python tools/web_ui.py
 ```
