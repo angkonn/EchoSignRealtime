@@ -2,6 +2,8 @@ import os
 import numpy as np
 import pandas as pd
 
+from typing import Any, Dict, cast
+
 from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_predict
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.neighbors import KNeighborsClassifier
@@ -154,8 +156,6 @@ def main() -> None:
     X: np.ndarray = df[FEATURE_COLS].to_numpy(dtype=float)
     y_str: np.ndarray = df[LABEL_COL].astype(str).to_numpy()
 
-    print(f"Loaded dataset: {X.shape[0]} samples, {X.shape[1]} features")
-
     le = LabelEncoder()
     y_enc: np.ndarray = np.asarray(le.fit_transform(y_str), dtype=int)
 
@@ -174,6 +174,9 @@ def main() -> None:
     best_weighted = -1.0
     reports = []
 
+    # Use plain Python strings for class names so dict lookups are well-typed
+    class_names = [str(c) for c in le.classes_]
+
     cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
     for cfg in candidates:
         pipe = Pipeline([
@@ -182,23 +185,25 @@ def main() -> None:
         ])
 
         y_pred_cv = cross_val_predict(pipe, X, y_enc, cv=cv, n_jobs=-1)
-        report = classification_report(y_enc, y_pred_cv, target_names=le.classes_, output_dict=True, zero_division=0)
-        macro_f1 = float(report["macro avg"]["f1-score"]) if "macro avg" in report else 0.0
-        weighted_f1 = float(report["weighted avg"]["f1-score"]) if "weighted avg" in report else 0.0
+        report: Dict[str, Any] = cast(Dict[str, Any], classification_report(
+            y_enc, y_pred_cv, target_names=class_names, output_dict=True, zero_division=0
+        ))
+        macro_f1 = float(report.get("macro avg", {}).get("f1-score", 0.0))
+        weighted_f1 = float(report.get("weighted avg", {}).get("f1-score", 0.0))
 
         # Store textual summary line for printing later
-        per_class = {label: float(report[label]["f1-score"]) for label in le.classes_ if label in report}
+        per_class = {label: float(report[label]["f1-score"]) for label in class_names if label in report}
         reports.append((cfg, macro_f1, weighted_f1, per_class))
 
-        # Track best by macro-F1, then weighted-F1
-        if (macro_f1 > best_macro) or (abs(macro_f1 - best_macro) < 1e-6 and weighted_f1 > best_weighted):
-            best_macro = macro_f1
+        # Track best configuration by weighted F1 (tie-breaker by macro F1)
+        if (weighted_f1 > best_weighted) or (weighted_f1 == best_weighted and macro_f1 > best_macro):
             best_weighted = weighted_f1
+            best_macro = macro_f1
             best_cfg = cfg
 
     print("\nSweep results (macro-F1 then per-class F1):")
     for cfg, macro_f1, weighted_f1, per_class in reports:
-        pcs = ", ".join(f"{lbl}:{per_class.get(lbl, 0.0):.3f}" for lbl in le.classes_)
+        pcs = ", ".join(f"{lbl}:{per_class.get(lbl, 0.0):.3f}" for lbl in class_names)
         print(f"  k={cfg['n_neighbors']}, metric={cfg['metric']}, weights=distance -> macro-F1={macro_f1:.4f}, weighted-F1={weighted_f1:.4f} | {pcs}")
 
     if best_cfg is None:
