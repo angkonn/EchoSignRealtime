@@ -1,5 +1,7 @@
 # EchoSignRealtime
 
+![EchoSign Glove Front](data/WhatsApp%20Image%202025-11-29%20at%203.47.41%20PM.jpeg)
+
 Real-time gesture and sentence recognition for a wearable sign glove. Firmware runs a lightweight KNN model (float and quantized int8) and streams predictions to a Web UI with optional text-to-speech.
 
 ## Project Overview
