@@ -106,7 +106,7 @@ Photos of the current glove build (flex sensors + ESP32):
 
 ESP32 + flex sensor resistor ladder and IMU connections:
 
-<img src="data/wiring_diagram.png" alt="EchoSign Wiring Diagram (ESP32 + Flex + IMU)" width="700" />
+<img src="data\wiring_diagram.png" alt="EchoSign Wiring Diagram (ESP32 + Flex + IMU)" width="700" />
 ```powershell
 python tools/web_ui.py
 ```
