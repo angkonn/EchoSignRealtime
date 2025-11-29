@@ -37,6 +37,7 @@ DATASET_CSV = os.path.join(DATA_DIR, "sentence_dataset.csv")
 MODEL_HEADER = os.path.join(SRC_DIR, "sentence_knn_model.h")
 SCALER_HEADER = os.path.join(SRC_DIR, "sentence_scaler_params.h")
 LABELS_HEADER = os.path.join(SRC_DIR, "sentence_label_names.h")
+MODEL_HEADER_INT8 = os.path.join(SRC_DIR, "sentence_knn_model_q.h")
 
 # Feature columns (12 features per sample, 80 samples = 960 features total)
 # Order: f1, f2, f3, f4, f5, gdp, ax, ay, az, gx, gy, gz (repeated for each time step)
@@ -351,6 +352,86 @@ def export_sentence_knn_model(knn: KNeighborsClassifier, X_scaled: np.ndarray,
     print(f"✓ Wrote model to: {out_path}")
 
 
+def export_sentence_knn_model_int8(X_scaled: np.ndarray, y_enc: np.ndarray, out_path: str) -> None:
+    """Export quantized (int8) KNN training data + per-feature scales.
+
+    We perform symmetric per-feature quantization on the standardized feature space.
+    For each feature column j, scale_j = 127 / maxAbs_j, where maxAbs_j = max(|X[:,j]|).
+    Quantized value q = clip(round(x * scale_j), -128, 127).
+    Distance is computed directly on int8 values (Manhattan), preserving relative ordering.
+    """
+    y_arr = np.asarray(y_enc, dtype=int)
+    n_samples, n_features = X_scaled.shape
+
+    # Compute per-feature symmetric scales
+    max_abs = np.max(np.abs(X_scaled), axis=0)
+    # Avoid divide by zero
+    max_abs[max_abs == 0] = 1e-6
+    scales = 127.0 / max_abs  # multiply float -> int8
+
+    # Quantize
+    q_data = np.rint(np.clip(X_scaled * scales, -128, 127)).astype(np.int8)
+
+    lines: List[str] = [
+        "#pragma once",
+        "#include <Arduino.h>",
+        "",
+        f"#define SENTENCE_KNN_Q_N_NEIGHBORS 3",  # matches best params; runtime can override if desired
+        f"#define SENTENCE_KNN_Q_N_SAMPLES {n_samples}",
+        f"#define SENTENCE_KNN_Q_N_FEATURES {n_features}",
+        "",
+        "// Per-feature quantization scales (multiply standardized float to get int8)",
+        "static const float SENTENCE_Q_SCALES[SENTENCE_KNN_Q_N_FEATURES] PROGMEM = {",
+    ]
+    # Write scales (10 per line)
+    for i in range(0, n_features, 10):
+        chunk = scales[i:i+10]
+        vals = ", ".join(f"{v:.6f}f" for v in chunk)
+        lines.append(f"  {vals},")
+    lines[-1] = lines[-1].rstrip(',')
+    lines.append("};")
+    lines.append("")
+
+    # Write quantized training data
+    lines.append("// Quantized training data (int8)")
+    lines.append("static const int8_t SENTENCE_TRAINING_DATA_Q[SENTENCE_KNN_Q_N_SAMPLES * SENTENCE_KNN_Q_N_FEATURES] PROGMEM = {")
+    flat_q = q_data.flatten()
+    for i in range(0, len(flat_q), 32):  # 32 per line for compactness
+        chunk = flat_q[i:i+32]
+        vals = ", ".join(str(int(v)) for v in chunk)
+        lines.append(f"  {vals},")
+    lines[-1] = lines[-1].rstrip(',')
+    lines.append("};")
+    lines.append("")
+
+    # Write labels
+    lines.append("// Training labels")
+    lines.append("static const uint8_t SENTENCE_TRAINING_LABELS_Q[SENTENCE_KNN_Q_N_SAMPLES] PROGMEM = {")
+    for i in range(0, n_samples, 32):
+        chunk = y_arr[i:i+32]
+        vals = ", ".join(str(int(v)) for v in chunk)
+        lines.append(f"  {vals},")
+    lines[-1] = lines[-1].rstrip(',')
+    lines.append("};")
+    lines.append("")
+
+    # Helper inline for quantizing a query vector already standardized
+    lines.extend([
+        "inline void quantizeSentenceFeatures(const float* inFeat, int8_t* outQ) {",
+        "  for (int i = 0; i < SENTENCE_KNN_Q_N_FEATURES; ++i) {",
+        "    float q = inFeat[i] * pgm_read_float(&SENTENCE_Q_SCALES[i]);",
+        "    if (q > 127.0f) q = 127.0f; else if (q < -128.0f) q = -128.0f;",
+        "    outQ[i] = (int8_t)lrintf(q);",
+        "  }",
+        "}",
+        "",
+    ])
+
+    with open(out_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines))
+    print(f"✓ Wrote INT8 model to: {out_path}")
+
+
 def main() -> None:
     print("\n" + "="*60)
     print("  EchoSign - Sentence KNN Trainer")
@@ -431,7 +512,10 @@ def main() -> None:
     
     export_sentence_scaler(scaler, SCALER_HEADER)
     export_sentence_labels(le, LABELS_HEADER)
+    # Float model (for fallback/reference)
     export_sentence_knn_model(best_knn, X_all_scaled, y_enc, MODEL_HEADER)
+    # INT8 quantized model (primary for deployment)
+    export_sentence_knn_model_int8(X_all_scaled, y_enc, MODEL_HEADER_INT8)
     
     print(f"\n{'='*60}")
     print("✓ TRAINING COMPLETE!")
@@ -441,6 +525,7 @@ def main() -> None:
     print(f"  - {SCALER_HEADER}")
     print(f"  - {LABELS_HEADER}")
     print(f"  - {MODEL_HEADER}")
+    print(f"  - {MODEL_HEADER_INT8}")
     print(f"\nNext steps:")
     print(f"  1. Update firmware to include sentence prediction mode")
     print(f"  2. Add button to trigger sentence recording")

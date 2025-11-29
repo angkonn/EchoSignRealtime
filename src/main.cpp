@@ -11,7 +11,7 @@
 // 0 = DATA COLLECTION (raw log for Python tools)
 // 1 = REAL-TIME PREDICTION (uses KNN model)
 // 3 = SENSOR CALIBRATION (prints min/max values)
-#define RUN_MODE 1
+#define RUN_MODE 0
 
 // Prediction modes (only used when RUN_MODE == 1)
 // 0 = GESTURE MODE (instant gestures)
@@ -22,8 +22,8 @@
 GlovePredictor predictor;
 SentencePredictor sentencePredictor;
 
-// Include sentence training data directly into main.cpp to prevent linker from stripping it
-#include "sentence_knn_model.cpp"
+// Use header-based sentence model (arrays included via sentence_predictor.h)
+// Removed inclusion of sentence_knn_model.cpp (outdated / imbalanced model)
 
 // Simple timer for collection loop
 uint32_t lastPrintMs = 0;
@@ -155,9 +155,10 @@ void setup() {
 #endif
   
   // FORCE LINKER TO KEEP SENTENCE MODEL DATA
-  volatile const float* force_link_data = SENTENCE_TRAINING_DATA;
-  volatile const uint8_t* force_link_labels = SENTENCE_TRAINING_LABELS;
-  Serial.printf("Sentence model: %d samples at 0x%p\n", SENTENCE_KNN_N_SAMPLES, force_link_data);
+  // Linker keep-alive for quantized sentence model
+  volatile const int8_t* force_link_data = SENTENCE_TRAINING_DATA_Q;
+  volatile const uint8_t* force_link_labels = SENTENCE_TRAINING_LABELS_Q;
+  Serial.printf("Sentence model (INT8): %d samples at 0x%p\n", SENTENCE_KNN_Q_N_SAMPLES, force_link_data);
   
   if (!predictor.begin()) {
     Serial.println("WARNING: MPU6050 init FAILED - sensor readings unavailable");

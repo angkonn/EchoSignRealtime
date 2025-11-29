@@ -2,14 +2,10 @@
 #include <Arduino.h>
 #include "sentence_label_names.h"
 #include "sentence_scaler_params.h"
+#include "sentence_knn_model_q.h" // Use quantized INT8 model for memory efficiency
 
-// Forward declare training data (defined in sentence_knn_model.cpp)
-extern const float SENTENCE_TRAINING_DATA[];
-extern const uint8_t SENTENCE_TRAINING_LABELS[];
-
-#define SENTENCE_KNN_N_NEIGHBORS 5
-#define SENTENCE_KNN_N_SAMPLES 39
-#define SENTENCE_KNN_N_FEATURES 960
+// Note: Remove obsolete hardcoded sample/count defines; rely on header values
+// SENTENCE_KNN_N_NEIGHBORS, SENTENCE_KNN_N_SAMPLES, SENTENCE_KNN_N_FEATURES now come from sentence_knn_model.h
 
 /**
  * Sentence Predictor
@@ -191,25 +187,44 @@ public:
     standardizeSentenceFeatures(features);
 
     // KNN prediction (Manhattan distance with distance-weighted voting)
-    uint8_t pred = predictSentenceKNN(features, meanDistance);
+    uint8_t rawPred = predictSentenceKNN(features, meanDistance);
 
-    // Resolve 'Rest' index lazily
+    // Resolve 'Rest' index lazily (or 'Unknown' if present)
     if (restLabelIndex < 0) {
       for (int i = 0; i < SENTENCE_NUM_CLASSES; ++i) {
-        if (strcmp(sentence_label_names[i], "Rest") == 0) {
+        const char* nm = sentence_label_names[i];
+        if ((nm && strcmp(nm, "Rest") == 0) || (nm && strcmp(nm, "Unknown") == 0)) {
           restLabelIndex = i;
           break;
         }
       }
+      if (restLabelIndex < 0) restLabelIndex = 0; // fallback
     }
 
-    // If mean distance is extremely high, treat as Rest/unknown
-    const float REJECTION_MEAN_DISTANCE = 20000.0f; // tuned down from 50000
+    // TEMPORARY: Raise rejection threshold until we collect int8 distance stats.
+    // Previous 12000 value was for float space; int8 Manhattan distances are larger.
+    const float REJECTION_MEAN_DISTANCE = 200000.0f; // debug high threshold to avoid constant Rest override
+
+    uint8_t finalPred = rawPred;
+    bool overridden = false;
     if (*meanDistance > REJECTION_MEAN_DISTANCE && restLabelIndex >= 0) {
-      return (uint8_t)restLabelIndex;
+      finalPred = (uint8_t)restLabelIndex;
+      overridden = true;
     }
 
-    return pred;
+#ifdef SENTENCE_DEBUG
+  Serial.print("{\"debug\":\"sentence_pred\",\"rawPred\":");
+  Serial.print(rawPred);
+  Serial.print(",\"meanD\":");
+  Serial.print(*meanDistance, 2);
+  Serial.print(",\"restIdx\":");
+  Serial.print(restLabelIndex);
+  Serial.print(",\"override\":");
+  Serial.print(overridden ? 1 : 0);
+  Serial.println("}");
+#endif
+
+    return finalPred;
   }
 
   // Reset buffer
@@ -221,10 +236,14 @@ public:
 
 private:
   // KNN prediction using Manhattan distance (L1) with distance-weighted voting
-  uint8_t predictSentenceKNN(const float* query, float* outMeanDist) {
-    const int K = SENTENCE_KNN_N_NEIGHBORS;
-    const int N = SENTENCE_KNN_N_SAMPLES;
-    const int D = SENTENCE_KNN_N_FEATURES;
+  uint8_t predictSentenceKNN(const float* queryStd, float* outMeanDist) {
+    // Quantize query (already standardized) to int8
+    static int8_t qQuery[SENTENCE_KNN_Q_N_FEATURES];
+    quantizeSentenceFeatures(queryStd, qQuery);
+
+    const int K = SENTENCE_KNN_Q_N_NEIGHBORS;
+    const int N = SENTENCE_KNN_Q_N_SAMPLES;
+    const int D = SENTENCE_KNN_Q_N_FEATURES;
 
     // Arrays to store K nearest neighbors
     float nearestDist[K];
@@ -242,10 +261,9 @@ private:
       float dist = 0.0f;
       
       for (int d = 0; d < D; d++) {
-        // Read from PROGMEM (training data is stored in flash)
-        float train_val = pgm_read_float(&SENTENCE_TRAINING_DATA[i * D + d]);
-        float diff = query[d] - train_val;
-        dist += fabsf(diff);  // Manhattan distance: sum of absolute differences
+        int8_t train_q = pgm_read_byte(&SENTENCE_TRAINING_DATA_Q[i * D + d]);
+        int diff = (int)qQuery[d] - (int)train_q;
+        dist += (diff >= 0 ? diff : -diff); // Manhattan distance in quantized space
       }
 
       // Insert into K nearest if closer than current worst
@@ -263,7 +281,7 @@ private:
         }
         
         nearestDist[pos] = dist;
-        nearestLabels[pos] = pgm_read_byte(&SENTENCE_TRAINING_LABELS[i]);
+        nearestLabels[pos] = pgm_read_byte(&SENTENCE_TRAINING_LABELS_Q[i]);
       }
     }
 
@@ -272,7 +290,7 @@ private:
     float weightSums[numClasses];
     for (int i = 0; i < numClasses; i++) weightSums[i] = 0.0f;
     for (int i = 0; i < K; i++) {
-      float w = 1.0f / (nearestDist[i] + 1e-6f); // avoid div by zero
+      float w = 1.0f / (nearestDist[i] + 1e-6f); // inverse distance weighting
       weightSums[nearestLabels[i]] += w;
     }
 
