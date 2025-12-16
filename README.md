@@ -10,6 +10,14 @@ This project implements real-time recognition using flex sensors and IMU (accele
 - Gesture mode: continuous single-frame classifications
 - Sentence mode: 4-second windows aggregated, standardized, then classified
 
+## Demo
+
+View live demonstrations of the system in action:
+- **Photos**: Gesture predictions for A-Z alphabet signs
+- **Videos**: Sentence prediction demonstrations
+
+📁 [Demo Folder (Google Drive)](https://drive.google.com/drive/folders/1kgazBY1S-GAXdBoW4ejO1MZOirsP-6wa)
+
 ## Directory Structure
 
 - **src/**: Main firmware sources
