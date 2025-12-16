@@ -93,20 +93,6 @@ python tools/parse_and_train.py
 
 Start the web interface:
 
-
-## Hardware
-
-Photos of the current glove build (flex sensors + ESP32):
-
-<img src="data/WhatsApp%20Image%202025-11-29%20at%203.47.41%20PM.jpeg" alt="EchoSign Glove Front" width="600" />
-
-<img src="data/WhatsApp%20Image%202025-11-29%20at%203.47.42%20PM.jpeg" alt="EchoSign Glove + UI" width="600" />
-
-## Wiring
-
-ESP32 + flex sensor resistor ladder and IMU connections:
-
-<img src="data\wiring_diagram.png" alt="EchoSign Wiring Diagram (ESP32 + Flex + IMU)" width="700" />
 ```powershell
 python tools/web_ui.py
 ```
@@ -140,6 +126,20 @@ C:\Users\88018\.platformio\penv\Scripts\platformio.exe run --target upload --upl
 ```
 
 Adjust `--upload-port` to your COM port.
+
+## Hardware
+
+Photos of the current glove build (flex sensors + ESP32):
+
+<img src="data/WhatsApp%20Image%202025-11-29%20at%203.47.41%20PM.jpeg" alt="EchoSign Glove Front" width="600" />
+
+<img src="data/WhatsApp%20Image%202025-11-29%20at%203.47.42%20PM.jpeg" alt="EchoSign Glove + UI" width="600" />
+
+## Wiring
+
+ESP32 + flex sensor resistor ladder and IMU connections:
+
+<img src="data\wiring_diagram.png" alt="EchoSign Wiring Diagram (ESP32 + Flex + IMU)" width="700" />
 
 ## Supported Labels
 
